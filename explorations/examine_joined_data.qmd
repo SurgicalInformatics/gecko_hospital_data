@@ -1,0 +1,233 @@
+---
+title: "Examine joined patient and hospital-level GECKO data"
+author: "Neil Clark"
+format:
+  html:
+    code-fold: true
+    code-summary: "Show the code"
+editor: source
+---
+
+### Initialize
+
+```{r output=F}
+setwd("../")
+library(tidyverse)
+library(pins)
+library(finalfit)
+theme_set(theme_bw())
+source("01_pull.R")
+source("02_join_world_bank.R")
+source("03_checkbox_variable_handling.R")
+source("04_cleaning.R")
+source("05_join_patient_data.R")
+
+joined_data = joined_data %>% 
+  filter(!(redcap_data_access_group %in%
+    
+    c("dz_tlem_unhotid",
+    "eg_assiu_unihos",
+    "no_gra_sykost",
+    "pk_lah_ulth",
+    "tn_kai_ibelja")
+  ))
+
+
+```
+
+# Joined data
+
+The data have been joined by augmenting the patient-level data with the matching rows of the hospital data based on the redcap_data_access_group:
+
+-   left_join(patient_data, hospital_data, by = "redcap_data_access_group")
+
+# Patient and Hospital data overlaps
+
+The patient and hospital-level data sets are joined wih the redcap_data_access_group variable. Here we examine the overlaps of the sets of values of this variable that occur in the patient and hospital level data:
+
+```{r}
+
+ph_matches = 
+full_join(
+  
+  patient_data %>% 
+    distinct(redcap_data_access_group) %>% 
+    mutate(dag_in_patient_data = T),
+  
+  hospital_data %>% 
+    rename("redcap_data_access_group_orig" = "redcap_data_access_group") %>%
+    rename("redcap_data_access_group" = "data_collection_dag") %>% 
+    dplyr::rename("hospital_record_id" = "record_id") %>% 
+    distinct(redcap_data_access_group) %>% mutate(dag_in_hospital_data = T)
+)
+
+
+ph_matches %>% 
+  count(dag_in_patient_data, dag_in_hospital_data, sort = T) %>% 
+  mutate(dag_in_patient_data = case_when(
+    is.na(dag_in_patient_data) ~ FALSE,
+    TRUE ~ dag_in_patient_data
+  )) %>% 
+  mutate(dag_in_hospital_data = case_when(
+    is.na(dag_in_hospital_data) ~ FALSE,
+    TRUE ~ dag_in_hospital_data
+  )) %>% 
+  knitr::kable()
+
+```
+
+There are `r ph_matches %>% count(dag_in_patient_data, dag_in_hospital_data) %>% filter(is.na(dag_in_patient_data) & dag_in_hospital_data==T) %>% pull(n)` redcap_data_access groups in the hospital data that are not in the patient data. These are hospitals with no patients.
+
+There are `r ph_matches %>% count(dag_in_patient_data, dag_in_hospital_data) %>% filter(is.na(dag_in_hospital_data) & dag_in_patient_data==T) %>% pull(n)` redcap_data_access groups in the ptient data that are not in the hospital data. These are patients with no hospital represented in the data.
+
+## Availabiity of Minimaly invasive surgical equipment versus operation type
+
+In the joined data set we compare the values of:
+
+-   **hospital-level**: hosp_mis_yn, " Do you have access to minimally invasive surgical equipment?"
+
+-   **patient-level**: op_approach, opperation approach.
+
+```{r}
+
+#hosp_mis_type
+#hosp_mis_yn " Do you have access to minimally invasive surgical equipment?"
+
+joined_data %>% 
+  select(hosp_mis_yn, op_approach) %>% 
+  count(op_approach, hosp_mis_yn) %>% 
+  knitr::kable()
+
+```
+
+There are `r  joined_data %>% filter(hosp_mis_yn == "No") %>% filter(op_approach == "Laparoscopic")  %>% nrow()` patients who had Laproscopic surgery in hospitals reported to not have minimally invasive surgical equipment. These patients are distributed over the following `r joined_data %>%  filter(hosp_mis_yn == "No") %>% filter(op_approach == "Laparoscopic") %>% count(redcap_data_access_group, sort = T) %>% nrow()` hospitals:
+
+```{r}
+joined_data %>% 
+  filter(hosp_mis_yn == "No") %>% 
+  filter(op_approach == "Laparoscopic") %>% 
+  count(redcap_data_access_group, sort = T) %>% 
+  dplyr::rename("n_patients_inconsistent" = "n") %>% 
+  knitr::kable()
+```
+
+#### Hospital type
+
+The distribution of hospital types in the joined data:
+
+```{r}
+joined_data %>% 
+  count(hosp_type, sort=T) %>% 
+  dplyr::rename("n_hospitals" = "n") %>% 
+  knitr::kable()
+```
+
+#### Operation approach:
+
+The distribution of operation approach in the joined data:
+
+```{r}
+joined_data %>% 
+  count(op_approach, sort=T) %>% 
+  dplyr::rename("n_patients" = "n") %>% 
+  knitr::kable()
+```
+
+#### Operation approach by hospital type
+
+Comparing hospital type and operation approach:
+
+```{r}
+joined_data %>% 
+  filter(!is.na(op_approach)) %>% 
+  filter(op_approach != "Missing") %>% 
+  ggplot(aes(x=op_approach, fill=op_approach))+
+  geom_bar()+
+  facet_wrap(~hosp_type)+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  xlab("opearation approach")+
+  theme(legend.position = "none")+
+scale_fill_viridis_d()
+```
+
+#### Operation approach by world bank income level
+
+Comparing operation aproach to world bank income level:
+
+```{r}
+joined_data %>% 
+  filter(!is.na(op_approach)) %>% 
+  filter(op_approach != "Missing") %>% 
+  #filter(!is.na(wb)) %>% 
+  #ggplot(aes(x=op_approach, fill=op_approach))+
+  #geom_bar()+
+  
+  ggplot(aes(x=wb, fill=op_approach))+
+  geom_bar(position="fill")+
+  
+  #facet_wrap(~wb)+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  xlab("World bank income level")+
+  ylab("Proportion")+
+scale_fill_viridis_d()+
+   coord_flip()
+  #theme(legend.position = "none")
+```
+
+### Notes
+
+The hospital level data has `r hospital_data %>% distinct(redcap_data_access_group, .keep_all = T) %>% filter(is.na(data_collection_dag)) %>% nrow()` out of `r hospital_data %>% distinct(redcap_data_access_group, .keep_all = T) %>% nrow()` rows with missing data collection DAG so cannot be matched to patient level data.
+
+The following data collection DAGs occur on two non-identical rows:
+
+-   dz_tlem_unhotid\
+-   eg_assiu_unihos
+-   no_gra_sykost
+-   pk_lah_ulth
+-   tn_kai_ibelja
+
+resulting in ambiguity in these cases.
+
+```{r include = F}
+
+df1 = hospital_data %>% 
+  rename("redcap_data_access_group_orig" = "redcap_data_access_group") %>% 
+  rename("redcap_data_access_group" = "data_collection_dag") %>% 
+  dplyr::rename("hospital_record_id" = "record_id") %>% 
+  mutate(dag_na = is.na(redcap_data_access_group))
+
+
+
+df1 %>% 
+  select(dag_na, site_survey_complete) %>% 
+  count(dag_na, site_survey_complete)
+
+```
+
+```{r include = F}
+
+colab_vars = c(
+  hospital_data_orig %>% select(starts_with("cons_")) %>% names(),
+  hospital_data_orig %>% select(starts_with("p1_")) %>% names(),
+  hospital_data_orig %>% select(starts_with("p2_")) %>% names()
+)
+
+df1_orig = hospital_data_orig %>% 
+  rename("redcap_data_access_group_orig" = "redcap_data_access_group") %>% 
+  rename("redcap_data_access_group" = "data_collection_dag") %>% 
+  dplyr::rename("hospital_record_id" = "record_id") %>% 
+  mutate(dag_na = is.na(redcap_data_access_group)) %>% 
+  mutate(colab = rowSums(!is.na(.[colab_vars])) >0  ) #%>% 
+  #select(dag_na, colab)
+
+
+
+test = df1_orig %>% 
+  filter(dag_na == TRUE) %>% 
+  filter(colab == TRUE)
+
+df1_orig %>% 
+#  select(dag_na, site_survey_complete) %>% 
+  count(dag_na, colab)
+
+```
