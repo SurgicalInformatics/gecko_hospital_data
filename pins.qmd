@@ -1,0 +1,50 @@
+---
+title: "Gecko hospital-level data to pins"
+author: "Neil Clark"
+format: html
+editor: source
+---
+
+# Pull data
+
+```{r}
+library(tidyverse)
+library(pins)
+library(finalfit)
+source("01_pull.R")
+source("02_join_world_bank.R")
+source("03_checkbox_variable_handling.R")
+source("04_cleaning.R")
+source("05_join_patient_data.R")
+```
+
+# Make NAs explicit
+
+```{r}
+#hospital_data_orig = hospital_data_orig %>% 
+#  mutate(across(where(is.factor), ~fct_na_value_to_level(., "Missing")))
+```
+
+# Write pin
+
+```{r}
+board = board_connect()
+board %>% pin_write(hospital_data_orig, "nclark/hospital_data", type = "rds")
+```
+
+# Usage
+
+```{r, eval = FALSE}
+library(pins)
+board = board_connect()
+hospital_data = pin_read(board, "nclark/hospital_data")
+date_updated = pin_meta(board, "nclark/hospital_data")$created
+```
+
+## write pin for join
+
+```{r}
+
+board = board_connect()
+board %>% pin_write(joined_data, "nclark/joined_data", type = "rds")
+```
